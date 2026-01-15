@@ -1,6 +1,57 @@
 # NtServiceInstaller - Technical Overview
 
-Direct ntdll.dll syscalls for registry manipulation.
+## Technique Summary
+
+Service installation using direct NT syscalls (`ntdll.dll`) for registry manipulation, bypassing user-mode API hooks on `advapi32.dll`. This advanced technique provides maximum stealth by only creating registry entries without triggering standard service creation APIs. Service becomes active after system reboot.
+
+**Key Characteristics:**
+- Direct `ntdll.dll` syscalls for registry operations
+- Bypasses `advapi32.dll` CreateService/DeleteService APIs
+- No service-specific event logs during install/uninstall
+- Requires system reboot for SCM to load service
+- Maximum EDR evasion
+
+## MITRE ATT&CK Mapping
+
+**Tactic:** Persistence, Privilege Escalation, Defense Evasion
+
+**Techniques:**
+- **T1543.003** - Create or Modify System Process: Windows Service
+  - Creates service via registry manipulation
+  - Service configured for auto-start
+  - Runs as SYSTEM account
+
+- **T1112** - Modify Registry
+  - Direct registry key creation via NtCreateKey
+  - Registry values set via NtSetValueKey
+  - Persistence through service registry entries
+
+- **T1106** - Native API
+  - Uses native NT APIs (ntdll.dll) instead of Windows APIs
+  - Bypasses user-mode hooks on advapi32.dll
+
+**Sub-techniques:**
+- Registry-only service creation
+- NT layer syscalls for stealth
+- Delayed activation (post-reboot)
+
+**Detection Opportunities:**
+- Security Event ID 4657 (Registry value modified - if auditing enabled)
+- Security Event ID 4660 (Object deleted - if auditing enabled)
+- Sysmon Event ID 1 (Process creation)
+- Sysmon Event ID 7 (Image loaded - ntdll.dll without advapi32.dll service APIs)
+- Sysmon Event ID 12 (Registry object added/deleted)
+- Sysmon Event ID 13 (Registry value set)
+- **Missing:** System Event ID 7045/7040 (service install/delete events)
+
+**Evasion Characteristics:**
+- No Event ID 7045 (service installed)
+- No Event ID 4697 (service installed)
+- No CreateService API call
+- Appears as registry operations only
+
+---
+
 
 ## Code Flow
 
@@ -158,6 +209,30 @@ ServiceController (reads from SCM)
 | Stop | None | OpenSCManager, OpenService, ControlService |
 | Uninstall | NtOpenKey, NtDeleteKey, NtClose | OpenService, ControlService (stop) |
 | Status | None | ServiceController query |
+
+## DLL Loading Events
+
+**Sysmon Event ID 7 (Image Loaded):**
+
+Process: `NtServiceInstaller.exe`
+
+**DLLs Loaded:**
+- `ntdll.dll` - NT syscalls (primary)
+- `kernel32.dll` - Core Windows APIs
+- `advapi32.dll` - Only for ServiceController operations (start/stop)
+- `sechost.dll` - Security host library
+- Additional .NET runtime DLLs (if framework-dependent build)
+
+**Log Source:**
+- `Microsoft-Windows-Sysmon%4Operational.evtx`
+
+**Key Difference:**
+- **Install/Uninstall**: Only `ntdll.dll` registry operations
+- **Start/Stop**: Loads `advapi32.dll` (fallback to SCM)
+
+**Detection:** 
+- Install: `ntdll.dll` loads WITHOUT subsequent `advapi32.dll` service APIs
+- Start/Stop: `advapi32.dll` loads for ServiceController
 
 ## Detection Points
 

@@ -1,6 +1,39 @@
 # WindowsServiceInstaller - Technical Overview
 
-Direct advapi32.dll API implementation for service management.
+## Technique Summary
+
+Service installation using direct Windows API calls (`advapi32.dll`) to create and manage Windows services without spawning `sc.exe`. This technique provides moderate stealth by avoiding command-line utilities while maintaining full service management capabilities with immediate SCM integration.
+
+**Key Characteristics:**
+- Direct `advapi32.dll` API calls via P/Invoke
+- No child process spawning (no sc.exe)
+- Service immediately available in SCM
+- Standard Windows event logging
+- Moderate EDR evasion
+
+## MITRE ATT&CK Mapping
+
+**Tactic:** Persistence, Privilege Escalation
+
+**Techniques:**
+- **T1543.003** - Create or Modify System Process: Windows Service
+  - Uses CreateService API to install service
+  - Service configured for auto-start
+  - Runs as SYSTEM account
+
+**Sub-techniques:**
+- Service installation via advapi32.dll APIs
+- Registry modification at `HKLM\SYSTEM\CurrentControlSet\Services`
+
+**Detection Opportunities:**
+- System Event ID 7045 (New service installed)
+- Security Event ID 4697 (Service installed)
+- Sysmon Event ID 1 (Process creation)
+- Sysmon Event ID 7 (Image loaded - advapi32.dll)
+- Sysmon Event ID 12/13 (Registry modifications)
+
+---
+
 
 ## Code Flow
 
@@ -153,6 +186,24 @@ CloseServiceHandle()
 | Stop | OpenSCManager, OpenService, ControlService, CloseServiceHandle |
 | Uninstall | OpenSCManager, OpenService, ControlService, DeleteService, CloseServiceHandle |
 | Status | OpenSCManager, OpenService, QueryServiceStatus, CloseServiceHandle |
+
+## DLL Loading Events
+
+**Sysmon Event ID 7 (Image Loaded):**
+
+Process: `WindowsServiceInstaller.exe`
+
+**DLLs Loaded:**
+- `ntdll.dll` - NT layer
+- `kernel32.dll` - Core Windows APIs
+- `advapi32.dll` - Service management APIs
+- `sechost.dll` - Security host library
+- Additional .NET runtime DLLs (if framework-dependent build)
+
+**Log Source:**
+- `Microsoft-Windows-Sysmon%4Operational.evtx`
+
+**Detection:** Look for `advapi32.dll` loads followed by service-related API calls.
 
 ## Detection Points
 
